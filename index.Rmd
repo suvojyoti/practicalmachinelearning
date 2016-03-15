@@ -86,18 +86,6 @@ dim(testing)
 test_clean<-testing[,!colMostNA]
 dim(test_clean)
 ```
-The resultant datasets have 57 columns
-### Check if all columns are same for training and testing 
-```{r, cache=T}
-all.equal(names(test_clean),names(train_Clean))
-
-# Check which column mismatched
-match<-names(test_clean)==names(train_Clean)
-which(match==FALSE)
-```
-It is the result variable
-The column is "problem_id" in testing set
-
 
 ### Next, we check the near zero variables
 ```{r, cache=T}
