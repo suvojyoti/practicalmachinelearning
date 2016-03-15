@@ -186,9 +186,7 @@ dim(testing)</code></pre>
 <pre class="r"><code>test_clean&lt;-testing[,!colMostNA]
 dim(test_clean)</code></pre>
 <pre><code>## [1] 20 60</code></pre>
-</div>
-<div id="check-if-all-columns-are-same-for-training-and-testing" class="section level3">
-<h3>Check if all columns are same for training and testing</h3>
+<p>The resultant datasets have 57 columns ### Check if all columns are same for training and testing</p>
 <pre class="r"><code>all.equal(names(test_clean),names(train_Clean))</code></pre>
 <pre><code>## [1] &quot;1 string mismatch&quot;</code></pre>
 <pre class="r"><code># Check which column mismatched
