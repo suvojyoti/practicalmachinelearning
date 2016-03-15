@@ -1,0 +1,195 @@
+---
+title: "PracticalMachineLearning-Course Project"
+author: "Suvojyoti Chowdhury"
+date: "March 15, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Course Project Objective
+
+The experiment was performed with different subjects and they all were asked to do some specific activity. In order to perform the activity, it is suggested to do it in a specific way. If it is not done in that way, it would give wrong result.
+
+This is the submitted project for evaluation of different machine learning techniques and finally predict that the manner in which a participent has performed an exercise, whether that is correct or wrong, depending on the accelerometer 
+
+## Overview of approach
+Upon analyzing the training data set, the following things are observed:
+1. The data set had 159 predictors
+2. There are a large number of NA 
+3. There are "divided by zero" exceptions for many observations
+
+So my approach was first to clean the dataset, reduce number of predictors and then apply machine learning algorithms
+
+For selecting algorithms, as per general tendency for these type of multiclass outome problem, I started with Decision Trees 
+
+## Coding Section
+
+### Loading Packages
+```{r, cache=T,results='hide'}
+# Loading required libraries
+library(ggplot2)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(corrplot)
+library(randomForest)
+library(plyr)
+library(dplyr)
+library(doMC)
+```
+### Data Loading
+
+```{r, cache=T}
+# Data Loading
+#-------------
+# trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+# testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+# Loading the data
+
+# download.file(trainUrl,destfile = "pml_train.csv")
+# download.file(testUrl,destfile = "pml_test.csv")
+training <- read.csv("pml_train.csv", na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv("pml_test.csv", na.strings=c("NA","#DIV/0!",""))
+```
+
+### Removing columns with large amount of NA values
+There are many columns which have good amount of NA values
+These would be problem for modelling
+So I decide to remove those columns where NA values are more than 60% of records
+
+```{r, cache=T}
+
+
+# Create function to tell whether a list is having
+# more than 60% NAs
+
+colNA<- function(x) {
+  ifelse(sum(is.na(x))/length(x) > .6,T,F)
+}
+# Apply the function to training set
+colMostNA<-apply(training,2,colNA)
+table(colMostNA)
+# Extract data with less NA columns
+train_Clean<-training[,!colMostNA]
+dim(train_Clean)
+# clean testdataset variables also
+dim(testing)
+test_clean<-testing[,!colMostNA]
+dim(test_clean)
+```
+### Check if all columns are same for training and testing 
+```{r, cache=T}
+all.equal(names(test_clean),names(train_Clean))
+
+# Check which column mismatched
+match<-names(test_clean)==names(train_Clean)
+which(match==FALSE)
+```
+It is the result variable
+The column is "problem_id" in testing set
+
+
+### Next, we check the near zero variables
+```{r, cache=T}
+nearZero <- nearZeroVar(train_Clean, saveMetrics=TRUE)
+```
+Only except "new_window", all other are having ample variation
+
+We also obsereved that the variables X and username should not have any impact on the outcome, so removing those and the newwindow
+```{r, cache=T}
+train_ds<-train_Clean[,-c(1,2,6)]
+
+test_ds<-test_clean[,-c(1,2,6)]
+```
+
+### Data Partitioning
+The test set given for this assignment is small, with 20 observations only. So I would create a partition in the training set with 75:25 proportion, first set to be used for training, the second set would be kept for testing.
+```{r, cache=T}
+set.seed(6666)
+inTrain = createDataPartition(train_ds$classe, p = 3/4)[[1]]
+train = train_ds[ inTrain,]
+hold = train_ds[-inTrain,]
+```
+
+### First fit decission tree
+```{r, cache=T}
+dtMod <- rpart(classe ~ ., data=train, method="class")
+fancyRpartPlot(dtMod,palettes=c("Greys", "Oranges"))
+# Predict
+dtPred <- predict(dtMod,hold, type = "class")
+# Check Performance
+confusionMatrix(dtPred, hold$classe)
+```
+
+So we observe that accuracy is around 86.7%. Now we will try to deep dive into the attributes once again and swill see if we can improve the performance
+
+### Remove Highly correlated coefficients
+We check if there are predictors which are highly correlated among themselves. If we found many of such, we would drop the correlators, selecting by findCorrelation function
+
+```{r, cache=T}
+# Change factors to numbers
+train$raw_timestamp_part_1<-as.numeric(train$raw_timestamp_part_1)
+train$cvtd_timestamp<-as.numeric(train$cvtd_timestamp)
+# Find predictors having correlation of .75 or higher with other predictors, but having higher average correlation with other predictors
+highCorr<-findCorrelation(cor(train[,-57]),cutoff = .75)
+length(highCorr)
+
+trainDF<-train[,-highCorr]
+corrplot(cor(trainDF[,-37],use="complete.obs"),order="hclust")
+holdDF<-hold[,-highCorr]
+testDF<-test_ds[,-highCorr]
+```
+
+So, from the plot its evident that now we do not have highly correlated predictors, and our predictor set became 37
+
+### Random Forest Model
+Now we try to train our training data with random forest model.
+
+### Processing time issue 
+Upon trying random forest, we observed that it is taking much amount of time(in hours) to train the dataset.
+Then as per suggestion of "Ray Jones", I tried to control the processing by using multiple processor threads and assigning specific number of variables to each node of the trees of RF
+```{r, cache=T}
+#  install.packages("doMC", repos="http://R-Forge.R-project.org")
+set.seed(666)
+registerDoMC(cores=4)
+mtryGrid <- expand.grid(mtry = 10)
+ctrl<-trainControl(allowParallel=T)
+
+# Train random forest
+rfMod <- train(classe~.,data=trainDF,
+               method="rf",
+               trControl=ctrl,
+               tuneGrid=mtryGrid,
+               ntree=100
+               )
+# Predict on holdout set
+rfPred<-predict(rfMod,holdDF)
+confusionMatrix(rfPred,holdDF$classe)
+```
+### Plot the hold set predictions
+
+```{r, cache=T}
+recs<-1:length(rfPred)
+plotDF<-data.frame(recs,rfPred)
+matches<-rfPred==holdDF$classe
+qplot(recs,rfPred,data=plotDF,color=matches)
+```
+
+### So we got accuracy of 99.98% with the random forest model
+
+### Applying model on the test set
+
+```{r, cache=T}
+resultPred<-predict(rfMod,testDF)
+
+resultPred
+```
