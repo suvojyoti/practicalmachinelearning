@@ -1,0 +1,15 @@
+base
+ggplot2
+lattice
+caret
+rpart
+rpart.plot
+RColorBrewer
+rattle
+corrplot
+randomForest
+plyr
+dplyr
+foreach
+iterators
+doMC
